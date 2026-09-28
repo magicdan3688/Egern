@@ -6,16 +6,12 @@
  * - API_URL: 监控端点，例如 https://域名/api (必填)
  * - GROUP: 分组筛选 (可选)，例如 "国外", "国内", 留空或 "all" 显示全部
  * - LIMIT: 显示服务器数量 (可选)，默认 4
- */
 /**
  * Egern 原生 Generic Widget: CF-Server-Monitor
- * 适配 Egern DSL 规范，通过 export default async function(ctx) 导出
  */
 
-// 超过 180 秒无心跳视为离线
 const OFFLINE_THRESHOLD_MS = 180 * 1000;
 
-// 国家/地区代码转换国旗 Emoji
 function getFlagEmoji(region) {
   if (!region || region.length !== 2) return "🌐";
   const codePoints = region
@@ -25,7 +21,6 @@ function getFlagEmoji(region) {
   return String.fromCodePoint(...codePoints);
 }
 
-// 格式化网速
 function formatSpeed(bytesPerSec) {
   if (!bytesPerSec || bytesPerSec <= 0) return "0 B/s";
   const units = ["B/s", "K/s", "M/s", "G/s"];
@@ -35,63 +30,60 @@ function formatSpeed(bytesPerSec) {
 }
 
 export default async function(ctx) {
-  // 1. 读取 Egern 环境变量
   const env = ctx.env || {};
-  const apiUrl = (env.API_URL || "").trim();
+  const apiUrl = (env.API_URL || "https://cerha-monitor.cerha3688.com/api").trim();
   const filterGroup = (env.GROUP || "").trim();
   const displayLimit = parseInt(env.LIMIT, 10) || 4;
 
-  // 校验是否设置了 API_URL
-  if (!apiUrl) {
-    return {
-      type: "widget",
-      backgroundColor: "#16181f",
-      padding: 14,
-      children: [
-        {
-          type: "text",
-          text: "⚠️ 未配置 API_URL",
-          font: { size: 13, weight: "bold" },
-          textColor: "#ef4444"
-        },
-        { type: "spacer", length: 6 },
-        {
-          type: "text",
-          text: "请在环境变量中添加：\n名称: API_URL\n值: 你的监控 /api 完整链接",
-          font: { size: 11 },
-          textColor: "#9ca3af"
-        }
-      ]
-    };
-  }
-
-  // 2. 发起网络请求获取数据
   let payload = null;
+  let errorDetail = "";
+
   try {
+    // 伪装完整浏览器请求头，避免触发 Cloudflare WAF 拦截
     const resp = await ctx.http.get(apiUrl, {
       headers: {
-        "User-Agent": "Egern-Monitor/1.0",
-        "Accept": "application/json"
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Referer": "https://cerha-monitor.cerha3688.com/",
+        "Origin": "https://cerha-monitor.cerha3688.com"
       }
     });
-    payload = await resp.json();
+
+    if (resp.status && resp.status !== 200) {
+      errorDetail = `HTTP 状态码: ${resp.status}`;
+    } else {
+      payload = await resp.json();
+    }
   } catch (err) {
+    errorDetail = String(err?.message || err || "网络超时");
+  }
+
+  // 获取失败处理
+  if (!payload || !payload.servers) {
     return {
       type: "widget",
       backgroundColor: "#16181f",
-      padding: 14,
+      padding: 12,
       children: [
         {
           type: "text",
-          text: "⚠️ 获取监控数据失败",
-          font: { size: 13, weight: "bold" },
+          text: "⚠️ 获取探针数据失败",
+          font: { size: 12, weight: "bold" },
           textColor: "#ef4444"
         },
         { type: "spacer", length: 4 },
         {
           type: "text",
-          text: String(err?.message || "网络请求超时或链接无法访问"),
-          font: { size: 10 },
+          text: errorDetail || "未能解析到 servers 节点",
+          font: { size: 10, family: "Menlo" },
+          textColor: "#f87171"
+        },
+        { type: "spacer", length: 4 },
+        {
+          type: "text",
+          text: `目标: ${apiUrl.substring(0, 32)}...`,
+          font: { size: 9 },
           textColor: "#71717a"
         }
       ]
@@ -102,7 +94,6 @@ export default async function(ctx) {
   const stats = payload.stats;
   const now = Date.now();
 
-  // 若填写了分组筛选
   if (filterGroup && filterGroup.toLowerCase() !== "all") {
     servers = servers.filter(s => s.server_group === filterGroup);
   }
@@ -114,7 +105,6 @@ export default async function(ctx) {
     ? `⚡ ${filterGroup}` 
     : "⚡ 节点监控";
 
-  // 3. 构建 Header 栏 (标题 + 在线统计)
   const widgetChildren = [
     {
       type: "stack",
@@ -138,7 +128,6 @@ export default async function(ctx) {
     }
   ];
 
-  // 4. 全局实时网速（如果有 stats 字段）
   if (stats && (stats.globalSpeedIn !== undefined || stats.globalSpeedOut !== undefined)) {
     widgetChildren.push({ type: "spacer", length: 2 });
     widgetChildren.push({
@@ -157,7 +146,6 @@ export default async function(ctx) {
 
   widgetChildren.push({ type: "spacer", length: 6 });
 
-  // 5. 渲染服务器列表
   const displayList = servers.slice(0, displayLimit);
 
   if (displayList.length === 0) {
@@ -224,7 +212,6 @@ export default async function(ctx) {
     }
   }
 
-  // 返回 Egern 原生 Widget DSL 树
   return {
     type: "widget",
     backgroundColor: "#16181f",
