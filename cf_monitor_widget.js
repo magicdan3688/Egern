@@ -7,8 +7,12 @@
  * - GROUP: 分组筛选 (可选)，例如 "国外", "国内", 留空或 "all" 显示全部
  * - LIMIT: 显示服务器数量 (可选)，默认 4
  */
+/**
+ * Egern 原生 Generic Widget: CF-Server-Monitor
+ * 适配 Egern DSL 规范，通过 export default async function(ctx) 导出
+ */
 
-// 1. 读取环境变量 (兼容 ctx.env、全局 $env 及默认值)
+// 超过 180 秒无心跳视为离线
 const OFFLINE_THRESHOLD_MS = 180 * 1000;
 
 // 国家/地区代码转换国旗 Emoji
@@ -31,13 +35,13 @@ function formatSpeed(bytesPerSec) {
 }
 
 export default async function(ctx) {
-  // 1. 从 ctx.env 获取在环境变量里填写的配置
+  // 1. 读取 Egern 环境变量
   const env = ctx.env || {};
   const apiUrl = (env.API_URL || "").trim();
   const filterGroup = (env.GROUP || "").trim();
   const displayLimit = parseInt(env.LIMIT, 10) || 4;
 
-  // 校验是否配置了 API_URL
+  // 校验是否设置了 API_URL
   if (!apiUrl) {
     return {
       type: "widget",
@@ -53,7 +57,7 @@ export default async function(ctx) {
         { type: "spacer", length: 6 },
         {
           type: "text",
-          text: "请在 Egern 环境变量添加：\n名称: API_URL\n值: 你的探针/api地址",
+          text: "请在环境变量中添加：\n名称: API_URL\n值: 你的监控 /api 完整链接",
           font: { size: 11 },
           textColor: "#9ca3af"
         }
@@ -61,7 +65,7 @@ export default async function(ctx) {
     };
   }
 
-  // 2. 发起网络请求获取监控数据
+  // 2. 发起网络请求获取数据
   let payload = null;
   try {
     const resp = await ctx.http.get(apiUrl, {
@@ -79,14 +83,14 @@ export default async function(ctx) {
       children: [
         {
           type: "text",
-          text: "⚠️ 获取探针数据失败",
+          text: "⚠️ 获取监控数据失败",
           font: { size: 13, weight: "bold" },
           textColor: "#ef4444"
         },
         { type: "spacer", length: 4 },
         {
           type: "text",
-          text: String(err?.message || "网络请求超时或地址错误"),
+          text: String(err?.message || "网络请求超时或链接无法访问"),
           font: { size: 10 },
           textColor: "#71717a"
         }
@@ -110,33 +114,31 @@ export default async function(ctx) {
     ? `⚡ ${filterGroup}` 
     : "⚡ 节点监控";
 
-  // 3. 构建 Header 栏 (标题 + 在线数)
-  const headerChildren = [
-    {
-      type: "text",
-      text: titleText,
-      font: { size: 12, weight: "bold" },
-      textColor: "#f4f4f5"
-    },
-    { type: "spacer" },
-    {
-      type: "text",
-      text: `${online}/${total} 在线`,
-      font: { size: 11, weight: "bold" },
-      textColor: (online === total && total > 0) ? "#10b981" : "#f59e0b"
-    }
-  ];
-
+  // 3. 构建 Header 栏 (标题 + 在线统计)
   const widgetChildren = [
     {
       type: "stack",
       direction: "horizontal",
       alignItems: "center",
-      children: headerChildren
+      children: [
+        {
+          type: "text",
+          text: titleText,
+          font: { size: 12, weight: "bold" },
+          textColor: "#f4f4f5"
+        },
+        { type: "spacer" },
+        {
+          type: "text",
+          text: `${online}/${total} 在线`,
+          font: { size: 11, weight: "bold" },
+          textColor: (online === total && total > 0) ? "#10b981" : "#f59e0b"
+        }
+      ]
     }
   ];
 
-  // 4. 全局实时吞吐量展示 (如果 stats 存在)
+  // 4. 全局实时网速（如果有 stats 字段）
   if (stats && (stats.globalSpeedIn !== undefined || stats.globalSpeedOut !== undefined)) {
     widgetChildren.push({ type: "spacer", length: 2 });
     widgetChildren.push({
@@ -171,20 +173,17 @@ export default async function(ctx) {
       const nameStr = s.name.length > 9 ? s.name.substring(0, 8) + "…" : s.name;
 
       const rowChildren = [
-        // 状态圆点
         {
           type: "text",
           text: "● ",
           font: { size: 10 },
           textColor: isOnline ? "#10b981" : "#ef4444"
         },
-        // 国旗
         {
           type: "text",
           text: `${getFlagEmoji(s.region)} `,
           font: { size: 10 }
         },
-        // 节点名称
         {
           type: "text",
           text: nameStr,
@@ -194,7 +193,6 @@ export default async function(ctx) {
         { type: "spacer" }
       ];
 
-      // 在线时显示性能指标；离线时显示 Offline
       if (isOnline) {
         const cpuVal = Math.round(s.cpu || 0);
         const memVal = Math.round(((s.ram_used || 0) / (s.ram_total || 1)) * 100);
@@ -226,7 +224,7 @@ export default async function(ctx) {
     }
   }
 
-  // 返回 Egern 原生 Widget DSL 结构
+  // 返回 Egern 原生 Widget DSL 树
   return {
     type: "widget",
     backgroundColor: "#16181f",
