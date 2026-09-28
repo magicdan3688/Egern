@@ -151,7 +151,7 @@ export default async function(ctx) {
   const widgetChildren = [
     {
       type: "stack",
-      direction: "horizontal",
+      direction: "row",
       alignItems: "center",
       children: headerChildren
     }
@@ -162,12 +162,12 @@ export default async function(ctx) {
     widgetChildren.push({ type: "spacer", length: 2 });
     widgetChildren.push({
       type: "stack",
-      direction: "horizontal",
+      direction: "row",
       children: [
         {
           type: "text",
           text: `↓ ${formatSpeed(stats.globalSpeedIn)}  ↑ ${formatSpeed(stats.globalSpeedOut)}`,
-          font: { size: 9, family: "Menlo" },
+          font: { size: 9 },
           textColor: "#71717a"
         }
       ]
@@ -224,7 +224,7 @@ export default async function(ctx) {
         rowChildren.push({
           type: "text",
           text: `C:${cpuVal}% M:${memVal}%  ${netDown}`,
-          font: { size: 10, family: "Menlo" },
+          font: { size: 10 },
           textColor: "#a1a1aa"
         });
       } else {
@@ -238,7 +238,7 @@ export default async function(ctx) {
 
       widgetChildren.push({
         type: "stack",
-        direction: "horizontal",
+        direction: "row",
         alignItems: "center",
         children: rowChildren
       });
