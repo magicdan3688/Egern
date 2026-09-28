@@ -176,7 +176,7 @@ export default async function(ctx) {
       const txStr = formatTraffic(stats.globalNetTx);
       subHeaderChildren.push({
         type: "text",
-        text: `总流: ↓${rxStr} ↑${txStr}`,
+        text: `总流量: ↓${rxStr} ↑${txStr}`,
         font: { size: 9, family: "Menlo" },
         textColor: "#71717a"
       });
@@ -255,8 +255,8 @@ export default async function(ctx) {
         col("CPU", "#71717a", F.cpu, 8, "bold"),
         col("MEM", "#71717a", F.mem, 8, "bold"),
         col("DISK", "#71717a", F.disk, 8, "bold"),
-        col("↓入", "#71717a", F.down, 8, "bold"),
-        col("↑出", "#71717a", F.up, 8, "bold")
+        col("↓INPUT", "#71717a", F.down, 8, "bold"),
+        col("↑OUTPUT", "#71717a", F.up, 8, "bold")
       ]
     });
     widgetChildren.push({ type: "spacer", length: 1 });
