@@ -1,6 +1,6 @@
 /**
- * Egern Widget: CF-Server-Monitor (UI 精细优化版)
- * 适配中号组件：国旗严格垂直对齐、名称防折断、中间信息丰满无留白、高度安全防溢出
+ * Egern Widget: CF-Server-Monitor
+ * 优化：地区两排严格网格对齐、文案修正(总流量/input/output)、自适应防截断
  */
 
 const OFFLINE_THRESHOLD_MS = 300 * 1000;
@@ -54,7 +54,7 @@ function usageColor(p) {
   return p >= 85 ? "#ef4444" : p >= 60 ? "#f59e0b" : "#10b981";
 }
 
-// 构造固定比例的列（居中对齐）
+// 构造固定比例的居中列
 function col(text, color, flex, size, weight) {
   return {
     type: "stack",
@@ -67,7 +67,7 @@ function col(text, color, flex, size, weight) {
       font: { size, weight: weight || "regular", family: "Menlo" },
       textColor: color,
       maxLines: 1,
-      minScale: 0.6
+      minScale: 0.55
     }]
   };
 }
@@ -129,7 +129,7 @@ export default async function(ctx) {
     ? `⚡ ${filterGroup}` 
     : "⚡ 节点监控";
 
-  // 1. 顶部第一行：标题 + 在线数
+  // 1. 顶部 Header
   const widgetChildren = [
     {
       type: "stack",
@@ -153,12 +153,11 @@ export default async function(ctx) {
     }
   ];
 
-  // 2. 顶部第二行：补全空白信息（实时上下行速率 + 累计月度总流量）
+  // 2. 网速与总流量行 (总流改为总流量)
   if (stats) {
     widgetChildren.push({ type: "spacer", length: 1 });
     const subHeaderChildren = [];
 
-    // 实时上下行
     if (stats.globalSpeedIn !== undefined || stats.globalSpeedOut !== undefined) {
       subHeaderChildren.push({
         type: "text",
@@ -170,7 +169,6 @@ export default async function(ctx) {
 
     subHeaderChildren.push({ type: "spacer" });
 
-    // 右侧补齐：累计总流量统计
     if (stats.globalNetRx !== undefined || stats.globalNetTx !== undefined) {
       const rxStr = formatTraffic(stats.globalNetRx);
       const txStr = formatTraffic(stats.globalNetTx);
@@ -192,7 +190,7 @@ export default async function(ctx) {
 
   widgetChildren.push({ type: "spacer", length: 4 });
 
-  // 3. 地区汇总行（国旗 + 个数）
+  // 3. 地区汇总行（每个格子固定 44 宽，保证上下两排国旗垂直对齐）
   if (showRegions && servers.length > 0) {
     const regionMap = {};
     for (const s of servers) {
@@ -207,44 +205,69 @@ export default async function(ctx) {
       .slice(0, 8);
 
     const PER_ROW = 4;
+    const REGION_ITEM_W = 44; // 固定每格宽度，解决两位数数字导致的错位
+
     for (let i = 0; i < regionList.length; i += PER_ROW) {
-      const rowItems = regionList.slice(i, i + PER_ROW).map(([code, r]) => {
-        const allUp = r.online === r.total;
-        return {
-          type: "text",
-          text: `${getFlagEmoji(code === "??" ? "" : code)} ${allUp ? r.total : `${r.online}/${r.total}`}`,
-          font: { size: 9, weight: "medium" },
-          textColor: allUp ? "#a1a1aa" : (r.online === 0 ? "#ef4444" : "#f59e0b")
-        };
-      });
-      const children = [];
-      rowItems.forEach((item, idx) => {
-        if (idx > 0) children.push({ type: "spacer", length: 8 });
-        children.push(item);
-      });
-      children.push({ type: "spacer" });
+      const rowChildren = [];
+      const currentGroup = regionList.slice(i, i + PER_ROW);
+
+      for (let j = 0; j < PER_ROW; j++) {
+        if (j < currentGroup.length) {
+          const [code, r] = currentGroup[j];
+          const allUp = r.online === r.total;
+          const countText = allUp ? `${r.total}` : `${r.online}/${r.total}`;
+
+          rowChildren.push({
+            type: "stack",
+            direction: "row",
+            alignItems: "center",
+            width: REGION_ITEM_W,
+            children: [
+              {
+                type: "text",
+                text: getFlagEmoji(code === "??" ? "" : code),
+                font: { size: 10 }
+              },
+              { type: "spacer", length: 2 },
+              {
+                type: "text",
+                text: countText,
+                font: { size: 9, weight: "medium", family: "Menlo" },
+                textColor: allUp ? "#a1a1aa" : (r.online === 0 ? "#ef4444" : "#f59e0b")
+              }
+            ]
+          });
+        } else {
+          // 不足 4 个时补空白槽位占位
+          rowChildren.push({
+            type: "stack",
+            width: REGION_ITEM_W
+          });
+        }
+      }
+
+      rowChildren.push({ type: "spacer" });
+
       widgetChildren.push({
         type: "stack",
         direction: "row",
         alignItems: "center",
-        children
+        children: rowChildren
       });
       widgetChildren.push({ type: "spacer", length: 1 });
     }
     widgetChildren.push({ type: "spacer", length: 3 });
   }
 
-  // 4. 节点列表布局参数
-  // 固定圆点宽度 10，固定国旗宽度 16（保证国旗绝对垂线对齐）
+  // 4. 节点列表参数配置
   const DOT_W = 9;
   const FLAG_W = 16;
-  // 各列分配比例：名称占大头，各指标均匀排开填满中间
-  const F = { name: 30, cpu: 12, mem: 12, disk: 12, down: 17, up: 17 };
+  // 适当加大 input 和 output 列的权重
+  const F = { name: 26, cpu: 11, mem: 11, disk: 11, down: 20, up: 21 };
 
   const displayList = servers.slice(0, displayLimit);
 
   if (displayLimit > 0 && displayList.length > 0) {
-    // 渲染微型表头
     widgetChildren.push({
       type: "stack",
       direction: "row",
@@ -255,19 +278,18 @@ export default async function(ctx) {
         col("CPU", "#71717a", F.cpu, 8, "bold"),
         col("MEM", "#71717a", F.mem, 8, "bold"),
         col("DISK", "#71717a", F.disk, 8, "bold"),
-        col("↓INPUT", "#71717a", F.down, 8, "bold"),
-        col("↑OUTPUT", "#71717a", F.up, 8, "bold")
+        col("↓input", "#71717a", F.down, 8, "bold"),
+        col("↑output", "#71717a", F.up, 8, "bold")
       ]
     });
     widgetChildren.push({ type: "spacer", length: 1 });
   }
 
-  // 5. 渲染各服务器行
+  // 5. 服务器列表行
   for (const s of displayList) {
     const isOnline = (now - (s.last_updated || 0)) < OFFLINE_THRESHOLD_MS;
 
     const rowChildren = [
-      // 1. 状态点 (固定宽度)
       {
         type: "stack",
         direction: "column",
@@ -280,7 +302,6 @@ export default async function(ctx) {
           textColor: isOnline ? "#10b981" : "#ef4444"
         }]
       },
-      // 2. 国旗 (固定宽度，确保垂线对齐)
       {
         type: "stack",
         direction: "column",
@@ -292,7 +313,6 @@ export default async function(ctx) {
           font: { size: 9 }
         }]
       },
-      // 3. 节点名称 (允许自适应缩小，不再提前硬截断)
       {
         type: "stack",
         direction: "column",
@@ -304,7 +324,7 @@ export default async function(ctx) {
           font: { size: 10, weight: "medium" },
           textColor: "#e4e4e7",
           maxLines: 1,
-          minScale: 0.7
+          minScale: 0.65
         }]
       }
     ];
@@ -315,7 +335,6 @@ export default async function(ctx) {
       const hasDisk = (s.disk_total || 0) > 0;
       const diskP = hasDisk ? Math.round(((s.disk_used || 0) / s.disk_total) * 100) : 0;
 
-      // 4. 指标列依次排开，填补空隙
       rowChildren.push(col(`${cpuP}%`, usageColor(cpuP), F.cpu, 9));
       rowChildren.push(col(`${memP}%`, usageColor(memP), F.mem, 9));
       rowChildren.push(hasDisk 
@@ -341,14 +360,13 @@ export default async function(ctx) {
       children: rowChildren
     });
 
-    // 行间距缩短到 2px，防止超出中号组件边界
     widgetChildren.push({ type: "spacer", length: 2 });
   }
 
   return {
     type: "widget",
     backgroundColor: "#16181f",
-    padding: [8, 12, 8, 12], // 紧凑内边距防溢出
+    padding: [8, 12, 8, 12],
     children: widgetChildren
   };
 }
