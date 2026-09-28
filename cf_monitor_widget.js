@@ -7,7 +7,8 @@
  *            (只填域名也可以，脚本会自动补全为 /api/servers)
  * - TOKEN: 管理员 JWT (可选)。仅当站点设为"私有"时需要，7 天过期
  * - GROUP: 分组筛选 (可选)，例如 "国外", "国内", 留空或 "all" 显示全部
- * - LIMIT: 显示服务器数量 (可选)，默认 4
+ * - LIMIT: 显示服务器数量 (可选)，默认 4；填 0 则只显示地区汇总
+ * - REGIONS: 填 0 可隐藏地区汇总 (可选)，默认显示
  */
 
 // 1. 读取环境变量 (兼容 ctx.env、全局 $env 及默认值)
@@ -45,7 +46,9 @@ export default async function(ctx) {
   const env = ctx.env || {};
   const apiUrl = (env.API_URL || "").trim();
   const filterGroup = (env.GROUP || "").trim();
-  const displayLimit = parseInt(env.LIMIT, 10) || 4;
+  const limitNum = parseInt(env.LIMIT, 10);
+  const displayLimit = Number.isNaN(limitNum) ? 4 : Math.max(0, limitNum);
+  const showRegions = String(env.REGIONS || "1").trim() !== "0";
 
   // 校验是否配置了 API_URL
   if (!apiUrl) {
@@ -176,10 +179,54 @@ export default async function(ctx) {
 
   widgetChildren.push({ type: "spacer", length: 6 });
 
+  // 地区分布汇总：国旗 + 在线数/总数（有节点离线时标红）
+  if (showRegions && servers.length > 0) {
+    const regionMap = {};
+    for (const s of servers) {
+      const code = (s.region || "").toUpperCase();
+      const key = code.length === 2 && code !== "XX" ? code : "??";
+      if (!regionMap[key]) regionMap[key] = { total: 0, online: 0 };
+      regionMap[key].total += 1;
+      if ((now - (s.last_updated || 0)) < OFFLINE_THRESHOLD_MS) regionMap[key].online += 1;
+    }
+    const regionList = Object.entries(regionMap)
+      .sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0]))
+      .slice(0, 8);
+
+    const PER_ROW = 4;
+    for (let i = 0; i < regionList.length; i += PER_ROW) {
+      const rowItems = regionList.slice(i, i + PER_ROW).map(([code, r]) => {
+        const allUp = r.online === r.total;
+        return {
+          type: "text",
+          text: `${getFlagEmoji(code === "??" ? "" : code)} ${allUp ? r.total : `${r.online}/${r.total}`}`,
+          font: { size: 10, weight: "medium" },
+          textColor: allUp ? "#a1a1aa" : (r.online === 0 ? "#ef4444" : "#f59e0b")
+        };
+      });
+      const children = [];
+      rowItems.forEach((item, idx) => {
+        if (idx > 0) children.push({ type: "spacer", length: 10 });
+        children.push(item);
+      });
+      children.push({ type: "spacer" });
+      widgetChildren.push({
+        type: "stack",
+        direction: "row",
+        alignItems: "center",
+        children
+      });
+      widgetChildren.push({ type: "spacer", length: 2 });
+    }
+    widgetChildren.push({ type: "spacer", length: 4 });
+  }
+
   // 5. 渲染服务器列表
   const displayList = servers.slice(0, displayLimit);
 
-  if (displayList.length === 0) {
+  if (displayLimit === 0) {
+    // 仅地区汇总，不渲染服务器列表
+  } else if (displayList.length === 0) {
     widgetChildren.push({
       type: "text",
       text: "当前分组暂无服务器",
