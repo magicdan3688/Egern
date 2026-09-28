@@ -3,8 +3,8 @@
  * 支持通过 Egern 环境变量动态配置参数
  * 
  * 环境变量支持 (可在 Egern 脚本界面配置)：
- * - API_URL: 监控端点，例如 https://cerha-monitor.cerha3688.com/api (必填)
- * - GROUP: 分组筛选 (可选)，例如 "国外", "国内", "Mac"，留空或 "all" 显示全部
+ * - API_URL: 监控端点，例如 https://域名/api (必填)
+ * - GROUP: 分组筛选 (可选)，例如 "国外", "国内", 留空或 "all" 显示全部
  * - LIMIT: 显示服务器数量 (可选)，默认 4
  */
 
