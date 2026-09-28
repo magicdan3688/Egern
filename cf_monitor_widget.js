@@ -1,18 +1,9 @@
 /**
- * Egern Widget: CF-Server-Monitor
- * 支持通过 Egern 环境变量动态配置参数
- * 
- * 环境变量支持 (可在 Egern 脚本界面配置)：
- * - API_URL: 探针站点地址 (必填)，例如 https://域名 或 https://域名/api/servers
- *            (只填域名也可以，脚本会自动补全为 /api/servers)
- * - TOKEN: 管理员 JWT (可选)。仅当站点设为"私有"时需要，7 天过期
- * - GROUP: 分组筛选 (可选)，例如 "国外", "国内", 留空或 "all" 显示全部
- * - LIMIT: 显示服务器数量 (可选)，默认 4；填 0 则只显示地区汇总
- * - REGIONS: 填 0 可隐藏地区汇总 (可选)，默认显示
+ * Egern Widget: CF-Server-Monitor (UI 精细优化版)
+ * 适配中号组件：国旗严格垂直对齐、名称防折断、中间信息丰满无留白、高度安全防溢出
  */
 
-// 1. 读取环境变量 (兼容 ctx.env、全局 $env 及默认值)
-const OFFLINE_THRESHOLD_MS = 300 * 1000; // 与探针后端一致：5 分钟无上报视为离线
+const OFFLINE_THRESHOLD_MS = 300 * 1000;
 
 // 国家/地区代码转换国旗 Emoji
 function getFlagEmoji(region) {
@@ -41,8 +32,47 @@ function formatSpeed(bytesPerSec) {
   return `${val}${units[i]}`;
 }
 
+// 短网速
+function formatSpeedShort(bytesPerSec) {
+  if (!bytesPerSec || bytesPerSec <= 0) return "0";
+  const units = ["B", "K", "M", "G"];
+  const i = Math.min(Math.floor(Math.log(bytesPerSec) / Math.log(1024)), units.length - 1);
+  const v = bytesPerSec / Math.pow(1024, i);
+  return `${v >= 100 ? v.toFixed(0) : v.toFixed(1)}${units[i]}`;
+}
+
+// 格式化累计总流量
+function formatTraffic(bytes) {
+  if (!bytes || bytes <= 0) return "0G";
+  const gb = bytes / (1024 * 1024 * 1024);
+  if (gb >= 1024) return `${(gb / 1024).toFixed(1)}T`;
+  return `${gb.toFixed(0)}G`;
+}
+
+// 占用率颜色标定
+function usageColor(p) {
+  return p >= 85 ? "#ef4444" : p >= 60 ? "#f59e0b" : "#10b981";
+}
+
+// 构造固定比例的列（居中对齐）
+function col(text, color, flex, size, weight) {
+  return {
+    type: "stack",
+    direction: "column",
+    alignItems: "center",
+    flex,
+    children: [{
+      type: "text",
+      text,
+      font: { size, weight: weight || "regular", family: "Menlo" },
+      textColor: color,
+      maxLines: 1,
+      minScale: 0.6
+    }]
+  };
+}
+
 export default async function(ctx) {
-  // 1. 从 ctx.env 获取在环境变量里填写的配置
   const env = ctx.env || {};
   const apiUrl = (env.API_URL || "").trim();
   const filterGroup = (env.GROUP || "").trim();
@@ -50,79 +80,44 @@ export default async function(ctx) {
   const displayLimit = Number.isNaN(limitNum) ? 4 : Math.max(0, limitNum);
   const showRegions = String(env.REGIONS || "1").trim() !== "0";
 
-  // 校验是否配置了 API_URL
   if (!apiUrl) {
     return {
       type: "widget",
       backgroundColor: "#16181f",
-      padding: 14,
+      padding: 12,
       children: [
-        {
-          type: "text",
-          text: "⚠️ 未配置 API_URL",
-          font: { size: 13, weight: "bold" },
-          textColor: "#ef4444"
-        },
-        { type: "spacer", length: 6 },
-        {
-          type: "text",
-          text: "请在 Egern 环境变量添加：\n名称: API_URL\n值: 你的探针/api地址",
-          font: { size: 11 },
-          textColor: "#9ca3af"
-        }
+        { type: "text", text: "⚠️ 未配置 API_URL", font: { size: 12, weight: "bold" }, textColor: "#ef4444" }
       ]
     };
   }
 
-  // 2. 发起网络请求获取监控数据
   const url = normalizeApiUrl(apiUrl);
   const headers = {
-    "User-Agent": "Egern-Monitor/1.0",
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)",
     "Accept": "application/json"
   };
   const token = (env.TOKEN || "").trim();
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const errorWidget = (title, detail) => ({
-    type: "widget",
-    backgroundColor: "#16181f",
-    padding: 14,
-    children: [
-      { type: "text", text: title, font: { size: 13, weight: "bold" }, textColor: "#ef4444" },
-      { type: "spacer", length: 4 },
-      { type: "text", text: detail, font: { size: 10 }, textColor: "#71717a" }
-    ]
-  });
-
   let payload = null;
   try {
     const resp = await ctx.http.get(url, { headers });
-    const status = resp.status;
-    if (status && status !== 200) {
-      if (status === 401) {
-        return errorWidget("🔒 站点为私有 (401)", "请在后台把站点设为公开，或在环境变量添加 TOKEN (管理员 JWT)");
-      }
-      return errorWidget(`⚠️ 请求失败 HTTP ${status}`, url);
-    }
-    const text = await resp.text();
-    try {
-      payload = JSON.parse(text);
-    } catch (e) {
-      return errorWidget("⚠️ 返回的不是 JSON", `${url}\n${text.slice(0, 60)}`);
-    }
+    payload = await resp.json();
   } catch (err) {
-    return errorWidget("⚠️ 获取探针数据失败", `${url}\n${String(err?.message || err)}`);
-  }
-
-  if (payload && payload.error) {
-    return errorWidget("⚠️ 探针返回错误", String(payload.error));
+    return {
+      type: "widget",
+      backgroundColor: "#16181f",
+      padding: 12,
+      children: [
+        { type: "text", text: "⚠️ 获取数据失败", font: { size: 12, weight: "bold" }, textColor: "#ef4444" }
+      ]
+    };
   }
 
   let servers = payload.servers || [];
   const stats = payload.stats;
   const now = Date.now();
 
-  // 若填写了分组筛选
   if (filterGroup && filterGroup.toLowerCase() !== "all") {
     servers = servers.filter(s => s.server_group === filterGroup);
   }
@@ -134,52 +129,70 @@ export default async function(ctx) {
     ? `⚡ ${filterGroup}` 
     : "⚡ 节点监控";
 
-  // 3. 构建 Header 栏 (标题 + 在线数)
-  const headerChildren = [
-    {
-      type: "text",
-      text: titleText,
-      font: { size: 12, weight: "bold" },
-      textColor: "#f4f4f5"
-    },
-    { type: "spacer" },
-    {
-      type: "text",
-      text: `${online}/${total} 在线`,
-      font: { size: 11, weight: "bold" },
-      textColor: (online === total && total > 0) ? "#10b981" : "#f59e0b"
-    }
-  ];
-
+  // 1. 顶部第一行：标题 + 在线数
   const widgetChildren = [
     {
       type: "stack",
       direction: "row",
       alignItems: "center",
-      children: headerChildren
-    }
-  ];
-
-  // 4. 全局实时吞吐量展示 (如果 stats 存在)
-  if (stats && (stats.globalSpeedIn !== undefined || stats.globalSpeedOut !== undefined)) {
-    widgetChildren.push({ type: "spacer", length: 2 });
-    widgetChildren.push({
-      type: "stack",
-      direction: "row",
       children: [
         {
           type: "text",
-          text: `↓ ${formatSpeed(stats.globalSpeedIn)}  ↑ ${formatSpeed(stats.globalSpeedOut)}`,
-          font: { size: 9 },
-          textColor: "#71717a"
+          text: titleText,
+          font: { size: 12, weight: "bold" },
+          textColor: "#f4f4f5"
+        },
+        { type: "spacer" },
+        {
+          type: "text",
+          text: `${online}/${total} 在线`,
+          font: { size: 11, weight: "bold" },
+          textColor: (online === total && total > 0) ? "#10b981" : "#f59e0b"
         }
       ]
+    }
+  ];
+
+  // 2. 顶部第二行：补全空白信息（实时上下行速率 + 累计月度总流量）
+  if (stats) {
+    widgetChildren.push({ type: "spacer", length: 1 });
+    const subHeaderChildren = [];
+
+    // 实时上下行
+    if (stats.globalSpeedIn !== undefined || stats.globalSpeedOut !== undefined) {
+      subHeaderChildren.push({
+        type: "text",
+        text: `↓ ${formatSpeed(stats.globalSpeedIn)}  ↑ ${formatSpeed(stats.globalSpeedOut)}`,
+        font: { size: 9, family: "Menlo" },
+        textColor: "#71717a"
+      });
+    }
+
+    subHeaderChildren.push({ type: "spacer" });
+
+    // 右侧补齐：累计总流量统计
+    if (stats.globalNetRx !== undefined || stats.globalNetTx !== undefined) {
+      const rxStr = formatTraffic(stats.globalNetRx);
+      const txStr = formatTraffic(stats.globalNetTx);
+      subHeaderChildren.push({
+        type: "text",
+        text: `总流: ↓${rxStr} ↑${txStr}`,
+        font: { size: 9, family: "Menlo" },
+        textColor: "#71717a"
+      });
+    }
+
+    widgetChildren.push({
+      type: "stack",
+      direction: "row",
+      alignItems: "center",
+      children: subHeaderChildren
     });
   }
 
-  widgetChildren.push({ type: "spacer", length: 6 });
+  widgetChildren.push({ type: "spacer", length: 4 });
 
-  // 地区分布汇总：国旗 + 在线数/总数（有节点离线时标红）
+  // 3. 地区汇总行（国旗 + 个数）
   if (showRegions && servers.length > 0) {
     const regionMap = {};
     for (const s of servers) {
@@ -200,13 +213,13 @@ export default async function(ctx) {
         return {
           type: "text",
           text: `${getFlagEmoji(code === "??" ? "" : code)} ${allUp ? r.total : `${r.online}/${r.total}`}`,
-          font: { size: 10, weight: "medium" },
+          font: { size: 9, weight: "medium" },
           textColor: allUp ? "#a1a1aa" : (r.online === 0 ? "#ef4444" : "#f59e0b")
         };
       });
       const children = [];
       rowItems.forEach((item, idx) => {
-        if (idx > 0) children.push({ type: "spacer", length: 10 });
+        if (idx > 0) children.push({ type: "spacer", length: 8 });
         children.push(item);
       });
       children.push({ type: "spacer" });
@@ -216,89 +229,126 @@ export default async function(ctx) {
         alignItems: "center",
         children
       });
-      widgetChildren.push({ type: "spacer", length: 2 });
+      widgetChildren.push({ type: "spacer", length: 1 });
     }
-    widgetChildren.push({ type: "spacer", length: 4 });
+    widgetChildren.push({ type: "spacer", length: 3 });
   }
 
-  // 5. 渲染服务器列表
+  // 4. 节点列表布局参数
+  // 固定圆点宽度 10，固定国旗宽度 16（保证国旗绝对垂线对齐）
+  const DOT_W = 9;
+  const FLAG_W = 16;
+  // 各列分配比例：名称占大头，各指标均匀排开填满中间
+  const F = { name: 30, cpu: 12, mem: 12, disk: 12, down: 17, up: 17 };
+
   const displayList = servers.slice(0, displayLimit);
 
-  if (displayLimit === 0) {
-    // 仅地区汇总，不渲染服务器列表
-  } else if (displayList.length === 0) {
+  if (displayLimit > 0 && displayList.length > 0) {
+    // 渲染微型表头
     widgetChildren.push({
-      type: "text",
-      text: "当前分组暂无服务器",
-      font: { size: 11 },
-      textColor: "#71717a"
+      type: "stack",
+      direction: "row",
+      alignItems: "center",
+      children: [
+        { type: "stack", direction: "row", width: DOT_W + FLAG_W },
+        { type: "stack", direction: "column", alignItems: "start", flex: F.name },
+        col("CPU", "#71717a", F.cpu, 8, "bold"),
+        col("MEM", "#71717a", F.mem, 8, "bold"),
+        col("DISK", "#71717a", F.disk, 8, "bold"),
+        col("↓入", "#71717a", F.down, 8, "bold"),
+        col("↑出", "#71717a", F.up, 8, "bold")
+      ]
     });
-  } else {
-    for (const s of displayList) {
-      const isOnline = (now - (s.last_updated || 0)) < OFFLINE_THRESHOLD_MS;
-      const nameStr = s.name.length > 9 ? s.name.substring(0, 8) + "…" : s.name;
-
-      const rowChildren = [
-        // 状态圆点
-        {
-          type: "text",
-          text: "● ",
-          font: { size: 10 },
-          textColor: isOnline ? "#10b981" : "#ef4444"
-        },
-        // 国旗
-        {
-          type: "text",
-          text: `${getFlagEmoji(s.region)} `,
-          font: { size: 10 }
-        },
-        // 节点名称
-        {
-          type: "text",
-          text: nameStr,
-          font: { size: 11 },
-          textColor: "#e4e4e7"
-        },
-        { type: "spacer" }
-      ];
-
-      // 在线时显示性能指标；离线时显示 Offline
-      if (isOnline) {
-        const cpuVal = Math.round(s.cpu || 0);
-        const memVal = Math.round(((s.ram_used || 0) / (s.ram_total || 1)) * 100);
-        const netDown = formatSpeed(s.net_in_speed || 0);
-
-        rowChildren.push({
-          type: "text",
-          text: `C:${cpuVal}% M:${memVal}%  ${netDown}`,
-          font: { size: 10 },
-          textColor: "#a1a1aa"
-        });
-      } else {
-        rowChildren.push({
-          type: "text",
-          text: "Offline",
-          font: { size: 10 },
-          textColor: "#ef4444"
-        });
-      }
-
-      widgetChildren.push({
-        type: "stack",
-        direction: "row",
-        alignItems: "center",
-        children: rowChildren
-      });
-
-      widgetChildren.push({ type: "spacer", length: 3 });
-    }
+    widgetChildren.push({ type: "spacer", length: 1 });
   }
 
-  // 返回 Egern 原生 Widget DSL 结构
+  // 5. 渲染各服务器行
+  for (const s of displayList) {
+    const isOnline = (now - (s.last_updated || 0)) < OFFLINE_THRESHOLD_MS;
+
+    const rowChildren = [
+      // 1. 状态点 (固定宽度)
+      {
+        type: "stack",
+        direction: "column",
+        alignItems: "start",
+        width: DOT_W,
+        children: [{
+          type: "text",
+          text: "●",
+          font: { size: 8 },
+          textColor: isOnline ? "#10b981" : "#ef4444"
+        }]
+      },
+      // 2. 国旗 (固定宽度，确保垂线对齐)
+      {
+        type: "stack",
+        direction: "column",
+        alignItems: "center",
+        width: FLAG_W,
+        children: [{
+          type: "text",
+          text: getFlagEmoji(s.region),
+          font: { size: 9 }
+        }]
+      },
+      // 3. 节点名称 (允许自适应缩小，不再提前硬截断)
+      {
+        type: "stack",
+        direction: "column",
+        alignItems: "start",
+        flex: F.name,
+        children: [{
+          type: "text",
+          text: s.name || "-",
+          font: { size: 10, weight: "medium" },
+          textColor: "#e4e4e7",
+          maxLines: 1,
+          minScale: 0.7
+        }]
+      }
+    ];
+
+    if (isOnline) {
+      const cpuP = Math.round(s.cpu || 0);
+      const memP = Math.round(((s.ram_used || 0) / (s.ram_total || 1)) * 100);
+      const hasDisk = (s.disk_total || 0) > 0;
+      const diskP = hasDisk ? Math.round(((s.disk_used || 0) / s.disk_total) * 100) : 0;
+
+      // 4. 指标列依次排开，填补空隙
+      rowChildren.push(col(`${cpuP}%`, usageColor(cpuP), F.cpu, 9));
+      rowChildren.push(col(`${memP}%`, usageColor(memP), F.mem, 9));
+      rowChildren.push(hasDisk 
+        ? col(`${diskP}%`, usageColor(diskP), F.disk, 9) 
+        : col("--", "#71717a", F.disk, 9)
+      );
+      rowChildren.push(col(formatSpeedShort(s.net_in_speed), "#a1a1aa", F.down, 9));
+      rowChildren.push(col(formatSpeedShort(s.net_out_speed), "#a1a1aa", F.up, 9));
+    } else {
+      rowChildren.push({ type: "spacer" });
+      rowChildren.push({
+        type: "text",
+        text: "Offline",
+        font: { size: 9, weight: "medium" },
+        textColor: "#ef4444"
+      });
+    }
+
+    widgetChildren.push({
+      type: "stack",
+      direction: "row",
+      alignItems: "center",
+      children: rowChildren
+    });
+
+    // 行间距缩短到 2px，防止超出中号组件边界
+    widgetChildren.push({ type: "spacer", length: 2 });
+  }
+
   return {
     type: "widget",
     backgroundColor: "#16181f",
-    padding: [10, 12, 10, 12],
+    padding: [8, 12, 8, 12], // 紧凑内边距防溢出
     children: widgetChildren
   };
 }
