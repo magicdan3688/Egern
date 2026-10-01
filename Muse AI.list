@@ -1,5 +1,5 @@
 # 规则名称: Muse AI
 
-- DOMAIN-SUFFIX,muse.ai,proxy
-- DOMAIN-SUFFIX,museai.com,proxy
-- DOMAIN-SUFFIX,ecto1.ai,proxy
+DOMAIN-SUFFIX,muse.ai
+DOMAIN-SUFFIX,museai.com
+DOMAIN-SUFFIX,ecto1.ai
