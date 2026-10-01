@@ -1,6 +1,11 @@
 /**
  * Egern Widget: CF-Server-Monitor
  * 优化：地区两排严格网格对齐、文案修正(总流量/input/output)、自适应防截断
+ * 环境变量支持 (可在 Egern 脚本界面配置)：
+ * - API_URL: 监控端点，例如 https://cerha-monitor.cerha3688.com/api (必填)
+ * - GROUP: 分组筛选 (可选)，例如 "国外", "国内"，留空或 "all" 显示全部
+ * - API_URL: 监控端点，例如 https://域名/ (api会自动补全填域名也行)
+ * - LIMIT: 显示服务器数量 (可选)，默认 4
  */
 
 const OFFLINE_THRESHOLD_MS = 300 * 1000;
