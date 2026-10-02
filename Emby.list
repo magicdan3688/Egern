@@ -197,8 +197,9 @@ DOMAIN-SUFFIX,yushen.cyou
 DOMAIN-SUFFIX,yusen.cc.cd
 DOMAIN-SUFFIX,wybcs.work
 DOMAIN-SUFFIX,itsmygo.tv
+DOMAIN-SUFFIX,emby.kingemby.com
 DOMAIN-KEYWORD,13.yusen.cyou
-DOMAIN-KKEYWORD，yushen
+DOMAIN-KEYWORD，yushen
 IP-CIDR,152.53.67.239/32,no-resolve
 IP-CIDR,168.119.137.205/32,no-resolve
 IP-CIDR,188.172.228.49/32,no-resolve
